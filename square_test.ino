@@ -1,20 +1,5 @@
-/*
- * Stepper Motor Test - Draw a Circle with 2-Link Arm
- * Arduino Mega 2560
- *
- * This is a ROTARY 2-link arm, NOT a Cartesian gantry.
- * Each stepper rotates a joint, so we must use inverse kinematics
- * to convert Cartesian (x,y) targets into joint angles.
- *
- * Stepper 1 (Base joint):  pins 4,5,6,7   (IN1-IN4)
- * Stepper 2 (Elbow joint): pins 10,11,12,13 (IN1-IN4)
- *
- * Arm: L1 = 140mm, L2 = 115mm
- */
-
 #include <math.h>
 
-// ── Pin definitions ──
 #define S1_IN1  4
 #define S1_IN2  5
 #define S1_IN3  6
@@ -25,35 +10,29 @@
 #define S2_IN3  12
 #define S2_IN4  13
 
-// ── Motor parameters ──
-#define STEPS_PER_REV  4096       // 28BYJ-48 half-step
-#define STEP_DELAY_US  1200       // speed (lower = faster, min ~900)
+#define STEPS_PER_REV  4096
+#define STEP_DELAY_US  1200
 
 const float DEG_PER_STEP = 360.0 / STEPS_PER_REV;
 
-// ── Arm geometry (mm) ──
-#define L1  140.0    // base to elbow
-#define L2  115.0    // elbow to pen
+#define L1  140.0
+#define L2  115.0
 
-// ── Circle parameters ──
-#define CIRCLE_RADIUS    20.0   // mm
-#define CIRCLE_SEGMENTS  72     // points per circle (5° per segment)
+#define CIRCLE_RADIUS    20.0
+#define CIRCLE_SEGMENTS  72
 
-// ── Global state ──
 long currentStepsS1 = 0;
 long currentStepsS2 = 0;
-float currentAngle1 = 0.0;  // degrees
-float currentAngle2 = 0.0;  // degrees
+float currentAngle1 = 0.0;
+float currentAngle2 = 0.0;
 int phaseS1 = 0;
 int phaseS2 = 0;
 
-// Half-step sequence (8 phases)
 const uint8_t seq[8][4] = {
   {1,0,0,0}, {1,1,0,0}, {0,1,0,0}, {0,1,1,0},
   {0,0,1,0}, {0,0,1,1}, {0,0,0,1}, {1,0,0,1}
 };
 
-// ── Low-level stepping ──
 void setPhase(uint8_t p1, uint8_t p2, uint8_t p3, uint8_t p4, const uint8_t ph[4]) {
   digitalWrite(p1, ph[0]); digitalWrite(p2, ph[1]);
   digitalWrite(p3, ph[2]); digitalWrite(p4, ph[3]);
@@ -78,7 +57,6 @@ void disableMotors() {
   digitalWrite(S2_IN3, LOW); digitalWrite(S2_IN4, LOW);
 }
 
-// ── Bresenham simultaneous move ──
 void moveSteppers(long tgtS1, long tgtS2) {
   long dS1 = tgtS1 - currentStepsS1;
   long dS2 = tgtS2 - currentStepsS2;
@@ -96,7 +74,6 @@ void moveSteppers(long tgtS1, long tgtS2) {
   }
 }
 
-// ── Inverse Kinematics ──
 bool inverseKinematics(float x, float y, float &ang1, float &ang2) {
   float dSq = x * x + y * y;
   float d = sqrt(dSq);
@@ -115,7 +92,6 @@ bool inverseKinematics(float x, float y, float &ang1, float &ang2) {
   return true;
 }
 
-// ── Move to Cartesian point ──
 bool moveTo(float x, float y) {
   float tA1, tA2;
   if (!inverseKinematics(x, y, tA1, tA2)) {
@@ -135,7 +111,6 @@ bool moveTo(float x, float y) {
   return true;
 }
 
-// ── Get current pen position via forward kinematics ──
 void getCurrentXY(float &x, float &y) {
   float t1r = currentAngle1 * M_PI / 180.0;
   float t2r = currentAngle2 * M_PI / 180.0;
@@ -143,17 +118,12 @@ void getCurrentXY(float &x, float &y) {
   y = L1 * sin(t1r) + L2 * sin(t1r + t2r);
 }
 
-// ── Draw a circle around current position ──
-// Pen starts at current pos, offsets to the right by radius,
-// then traces a full circle back to start.
 void drawCircle(float radius) {
   float cx, cy;
-  getCurrentXY(cx, cy);  // centre = current pen position
+  getCurrentXY(cx, cy);
 
-  // Move to first point (right of centre)
   moveTo(cx + radius, cy);
 
-  // Trace the circle
   for (int i = 1; i <= CIRCLE_SEGMENTS; i++) {
     float angle = (2.0 * M_PI * i) / CIRCLE_SEGMENTS;
     float px = cx + radius * cos(angle);
@@ -161,11 +131,9 @@ void drawCircle(float radius) {
     moveTo(px, py);
   }
 
-  // Return to centre
   moveTo(cx, cy);
 }
 
-// ── SETUP ──
 void setup() {
   Serial.begin(115200);
   Serial.println("Circle Test - 2-Link Arm with IK");
@@ -178,7 +146,6 @@ void setup() {
   delay(1000);
 }
 
-// ── LOOP ──
 void loop() {
   Serial.println("Drawing circle from current position...");
 

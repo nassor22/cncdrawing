@@ -1,21 +1,5 @@
-/*
- * Simple Horizontal Line Test - 20mm
- * Arduino Mega 2560
- *
- * 2-Link arm with inverse kinematics.
- * Stepper 1 (Base):   pins 4,5,6,7
- * Stepper 2 (Elbow):  pins 10,11,12,13
- *
- * Arm starts fully extended straight (angles 0,0).
- * Pen is at (255, 0).
- * We move the pen 20mm to the left (from X=255 to X=235) along Y=0.
- *
- * No servo — just watch the arm move in a straight horizontal line.
- */
-
 #include <math.h>
 
-// ── Pins ──
 #define S1_IN1  4
 #define S1_IN2  5
 #define S1_IN3  6
@@ -26,17 +10,14 @@
 #define S2_IN3  12
 #define S2_IN4  13
 
-// ── Motor ──
 #define STEPS_PER_REV  4096
 #define STEP_DELAY_US  1200
 
 const float DEG_PER_STEP = 360.0 / STEPS_PER_REV;
 
-// ── Arm ──
 #define L1  140.0
 #define L2  115.0
 
-// ── State ──
 long currentStepsS1 = 0, currentStepsS2 = 0;
 float currentAngle1 = 0.0, currentAngle2 = 0.0;
 int phaseS1 = 0, phaseS2 = 0;
@@ -46,7 +27,6 @@ const uint8_t seq[8][4] = {
   {0,0,1,0}, {0,0,1,1}, {0,0,0,1}, {1,0,0,1}
 };
 
-// ── Low-level ──
 void setPhase(uint8_t p1, uint8_t p2, uint8_t p3, uint8_t p4, const uint8_t ph[4]) {
   digitalWrite(p1, ph[0]); digitalWrite(p2, ph[1]);
   digitalWrite(p3, ph[2]); digitalWrite(p4, ph[3]);
@@ -81,7 +61,6 @@ void moveSteppers(long tgtS1, long tgtS2) {
   }
 }
 
-// ── Kinematics ──
 bool inverseKinematics(float x, float y, float &a1, float &a2) {
   float dSq = x*x + y*y, d = sqrt(dSq);
   if (d > (L1+L2) || d < fabs(L1-L2)) return false;
@@ -116,7 +95,6 @@ void getCurrentXY(float &x, float &y) {
   y = L1*sin(t1) + L2*sin(t1+t2);
 }
 
-// Interpolated move — straight line, not arc
 bool moveTo(float x2, float y2) {
   float x1, y1;
   getCurrentXY(x1, y1);
@@ -124,7 +102,7 @@ bool moveTo(float x2, float y2) {
   float dist = sqrt(dx*dx + dy*dy);
   if (dist < 0.5) return moveToRaw(x2, y2);
 
-  int steps = max((int)(dist / 1.0), 10);  // ~1mm per step
+  int steps = max((int)(dist / 1.0), 10);
   for (int i = 1; i <= steps; i++) {
     float t = (float)i / steps;
     if (!moveToRaw(x1 + dx*t, y1 + dy*t)) return false;
@@ -132,7 +110,6 @@ bool moveTo(float x2, float y2) {
   return true;
 }
 
-// ═══════════════════════════════════════════
 void setup() {
   Serial.begin(115200);
   Serial.println("=== Horizontal Line Test ===");
@@ -144,7 +121,6 @@ void setup() {
 
   delay(1000);
 
-  // Arm starts straight: angles (0, 0), pen at (255, 0)
   currentAngle1 = 0.0;
   currentAngle2 = 0.0;
 
@@ -155,12 +131,11 @@ void setup() {
 }
 
 void loop() {
-  // Move 20mm inward (bend elbow)
+
   Serial.println("Moving inward...");
   moveTo(235.0, 0.0);
   delay(500);
 
-  // Move 20mm back out (straighten)
   Serial.println("Moving back...");
   moveTo(255.0, 0.0);
   delay(500);

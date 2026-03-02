@@ -1,19 +1,6 @@
-/*
- * CNC Drawing Robot - Write "HELLO WORLD"
- * Arduino Mega 2560
- *
- * 2-Link rotary arm with inverse kinematics.
- * Stepper 1 (Base):   pins 4,5,6,7
- * Stepper 2 (Elbow):  pins 10,11,12,13
- * Servo (pen lift):   pin 9
- *
- * Arm: L1 = 140mm, L2 = 115mm
- */
-
 #include <Servo.h>
 #include <math.h>
 
-// ── Pins ──
 #define S1_IN1  4
 #define S1_IN2  5
 #define S1_IN3  6
@@ -26,37 +13,28 @@
 
 #define SERVO_PIN  9
 
-// ── Motor ──
 #define STEPS_PER_REV  4096
 #define STEP_DELAY_US  1200
 
 const float DEG_PER_STEP = 360.0 / STEPS_PER_REV;
 
-// ── Arm ──
 #define L1  140.0
 #define L2  115.0
 
-// ── Text layout ──
-// Characters are drawn on a 4x6 unit grid, scaled to mm.
-#define CHAR_HEIGHT  12.0    // mm tall
-#define CHAR_GAP      3.0    // mm gap between characters
-#define WORD_GAP      8.0    // mm extra gap for space
-#define INTERP_STEPS  10     // interpolation points per line segment
+#define CHAR_HEIGHT  12.0
+#define CHAR_GAP      3.0
+#define WORD_GAP      8.0
+#define INTERP_STEPS  10
 
-const float SC = CHAR_HEIGHT / 6.0;  // scale factor (mm per unit)
-const float CHAR_W = 4.0 * SC;       // character width in mm
+const float SC = CHAR_HEIGHT / 6.0;
+const float CHAR_W = 4.0 * SC;
 
-// ── Where to draw (absolute coordinates from arm base) ──
-// Arm starts straight at (255, 0). Text is placed within comfortable reach.
-// Y = distance in front of arm base, X = left/right of centre
-#define TEXT_START_X  -60.0   // mm — start to the left
-#define TEXT_START_Y   150.0  // mm — in front of arm base (well within 255mm reach)
+#define TEXT_START_X  -60.0
+#define TEXT_START_Y   150.0
 
-// ── Servo ──
 #define PEN_UP_ANGLE    120
 #define PEN_DOWN_ANGLE   60
 
-// ── State ──
 Servo penServo;
 long currentStepsS1 = 0, currentStepsS2 = 0;
 float currentAngle1 = 0.0, currentAngle2 = 0.0;
@@ -68,12 +46,8 @@ const uint8_t seq[8][4] = {
   {0,0,1,0}, {0,0,1,1}, {0,0,0,1}, {1,0,0,1}
 };
 
-// ── Cursor position (bottom-left of next character) ──
 float cursorX, cursorY;
 
-// ═══════════════════════════════════════════
-// Low-level motor functions
-// ═══════════════════════════════════════════
 void setPhase(uint8_t p1, uint8_t p2, uint8_t p3, uint8_t p4, const uint8_t ph[4]) {
   digitalWrite(p1, ph[0]); digitalWrite(p2, ph[1]);
   digitalWrite(p3, ph[2]); digitalWrite(p4, ph[3]);
@@ -108,9 +82,6 @@ void moveSteppers(long tgtS1, long tgtS2) {
   }
 }
 
-// ═══════════════════════════════════════════
-// Kinematics
-// ═══════════════════════════════════════════
 bool inverseKinematics(float x, float y, float &a1, float &a2) {
   float dSq = x*x + y*y, d = sqrt(dSq);
   if (d > (L1+L2) || d < fabs(L1-L2)) return false;
@@ -124,7 +95,6 @@ bool inverseKinematics(float x, float y, float &a1, float &a2) {
   return true;
 }
 
-// Raw move to a single point (no interpolation)
 bool moveToRaw(float x, float y) {
   float tA1, tA2;
   if (!inverseKinematics(x, y, tA1, tA2)) {
@@ -139,7 +109,6 @@ bool moveToRaw(float x, float y) {
   return true;
 }
 
-// Get current pen (x,y) from forward kinematics
 void getCurrentXY(float &x, float &y) {
   float t1 = currentAngle1 * M_PI / 180.0;
   float t2 = currentAngle2 * M_PI / 180.0;
@@ -147,8 +116,6 @@ void getCurrentXY(float &x, float &y) {
   y = L1*sin(t1) + L2*sin(t1+t2);
 }
 
-// Interpolated move: breaks the path into small segments
-// so the pen follows a straight Cartesian line, not an arc.
 bool moveTo(float x2, float y2) {
   float x1, y1;
   getCurrentXY(x1, y1);
@@ -156,12 +123,10 @@ bool moveTo(float x2, float y2) {
   float dx = x2 - x1, dy = y2 - y1;
   float dist = sqrt(dx*dx + dy*dy);
 
-  // For very short moves, just go directly
   if (dist < 1.0) {
     return moveToRaw(x2, y2);
   }
 
-  // Break into small steps
   int steps = max((int)(dist / 1.5), INTERP_STEPS);
   for (int i = 1; i <= steps; i++) {
     float t = (float)i / steps;
@@ -172,11 +137,8 @@ bool moveTo(float x2, float y2) {
   return true;
 }
 
-// ═══════════════════════════════════════════
-// Pen control
-// ═══════════════════════════════════════════
 void penUp() {
-  if (!penIsDown) return;  // avoid redundant servo moves
+  if (!penIsDown) return;
   penServo.write(PEN_UP_ANGLE);
   delay(250);
   penIsDown = false;
@@ -189,34 +151,24 @@ void penDown() {
   penIsDown = true;
 }
 
-// ═══════════════════════════════════════════
-// Drawing helpers
-// ═══════════════════════════════════════════
-
-// Travel to (x,y) with pen up
 void travelTo(float x, float y) {
   penUp();
   moveTo(x, y);
 }
 
-// Draw a line from current position to (x,y) with pen down
 void drawTo(float x, float y) {
   penDown();
   moveTo(x, y);
 }
 
-// Stroke: pen up → go to (x1,y1) → pen down → draw to (x2,y2)
 void stroke(float x1, float y1, float x2, float y2) {
   travelTo(x1, y1);
   drawTo(x2, y2);
 }
 
-// Convert character-local grid coords to absolute coords
-// Grid: (0,0)=bottom-left, (4,6)=top-right of character cell
 float gx(float u) { return cursorX + u * SC; }
 float gy(float v) { return cursorY + v * SC; }
 
-// Advance cursor to next character position
 void advanceCursor() {
   cursorX += CHAR_W + CHAR_GAP;
 }
@@ -224,32 +176,28 @@ void advanceSpace() {
   cursorX += CHAR_W + WORD_GAP;
 }
 
-// ═══════════════════════════════════════════
-// Character drawing functions (4x6 grid)
-// ═══════════════════════════════════════════
-
 void drawH() {
-  stroke(gx(0), gy(0), gx(0), gy(6));   // left vertical
-  stroke(gx(0), gy(3), gx(4), gy(3));   // middle bar
-  stroke(gx(4), gy(0), gx(4), gy(6));   // right vertical
+  stroke(gx(0), gy(0), gx(0), gy(6));
+  stroke(gx(0), gy(3), gx(4), gy(3));
+  stroke(gx(4), gy(0), gx(4), gy(6));
   advanceCursor();
 }
 
 void drawE() {
-  travelTo(gx(4), gy(0));               // start at bottom-right
-  drawTo(gx(0), gy(0));                 // bottom bar
-  drawTo(gx(0), gy(3));                 // up to middle
-  drawTo(gx(3), gy(3));                 // middle bar
-  travelTo(gx(0), gy(3));               // back to left
-  drawTo(gx(0), gy(6));                 // up to top
-  drawTo(gx(4), gy(6));                 // top bar
+  travelTo(gx(4), gy(0));
+  drawTo(gx(0), gy(0));
+  drawTo(gx(0), gy(3));
+  drawTo(gx(3), gy(3));
+  travelTo(gx(0), gy(3));
+  drawTo(gx(0), gy(6));
+  drawTo(gx(4), gy(6));
   advanceCursor();
 }
 
 void drawL() {
-  travelTo(gx(0), gy(6));               // start top-left
-  drawTo(gx(0), gy(0));                 // down
-  drawTo(gx(4), gy(0));                 // right along bottom
+  travelTo(gx(0), gy(6));
+  drawTo(gx(0), gy(0));
+  drawTo(gx(4), gy(0));
   advanceCursor();
 }
 
@@ -272,31 +220,28 @@ void drawW() {
 }
 
 void drawR() {
-  travelTo(gx(0), gy(0));               // start bottom
-  drawTo(gx(0), gy(6));                 // up full left
-  drawTo(gx(3), gy(6));                 // across top
-  drawTo(gx(4), gy(4.5));               // bump out
-  drawTo(gx(3), gy(3));                 // back to mid
-  drawTo(gx(0), gy(3));                 // back to left
-  travelTo(gx(2), gy(3));               // start of leg
-  drawTo(gx(4), gy(0));                 // diagonal leg
+  travelTo(gx(0), gy(0));
+  drawTo(gx(0), gy(6));
+  drawTo(gx(3), gy(6));
+  drawTo(gx(4), gy(4.5));
+  drawTo(gx(3), gy(3));
+  drawTo(gx(0), gy(3));
+  travelTo(gx(2), gy(3));
+  drawTo(gx(4), gy(0));
   advanceCursor();
 }
 
 void drawD() {
-  travelTo(gx(0), gy(0));               // start bottom-left
-  drawTo(gx(0), gy(6));                 // up
-  drawTo(gx(3), gy(6));                 // across top
-  drawTo(gx(4), gy(4.5));               // curve down
-  drawTo(gx(4), gy(1.5));               // curve down more
-  drawTo(gx(3), gy(0));                 // back in
-  drawTo(gx(0), gy(0));                 // close
+  travelTo(gx(0), gy(0));
+  drawTo(gx(0), gy(6));
+  drawTo(gx(3), gy(6));
+  drawTo(gx(4), gy(4.5));
+  drawTo(gx(4), gy(1.5));
+  drawTo(gx(3), gy(0));
+  drawTo(gx(0), gy(0));
   advanceCursor();
 }
 
-// ═══════════════════════════════════════════
-// SETUP
-// ═══════════════════════════════════════════
 void setup() {
   Serial.begin(115200);
   Serial.println("Hello World Writer - 2-Link Arm");
@@ -311,13 +256,9 @@ void setup() {
   penIsDown = false;
   delay(1000);
 
-  // ── Set initial arm position ──
-  // Arm starts fully extended straight (both angles 0)
-  // Pen is at (255, 0) along the X+ axis.
-  currentAngle1 = 0.0;    // base angle — arm points right
-  currentAngle2 = 0.0;    // elbow straight
+  currentAngle1 = 0.0;
+  currentAngle2 = 0.0;
 
-  // Set cursor to the text start position
   cursorX = TEXT_START_X;
   cursorY = TEXT_START_Y;
 
@@ -327,12 +268,10 @@ void setup() {
   Serial.print("Arm reach: ");
   Serial.println(L1 + L2);
 
-  // ── Travel to text start position ──
   Serial.println("Traveling to start...");
   travelTo(cursorX, cursorY);
   delay(500);
 
-  // ── Write "HELLO WORLD" ──
   Serial.println("Writing: HELLO WORLD");
 
   drawH();  Serial.println("H done");
@@ -341,7 +280,7 @@ void setup() {
   drawL();  Serial.println("L done");
   drawO();  Serial.println("O done");
 
-  advanceSpace();  // space between words
+  advanceSpace();
 
   drawW();  Serial.println("W done");
   drawO();  Serial.println("O done");
@@ -349,15 +288,11 @@ void setup() {
   drawL();  Serial.println("L done");
   drawD();  Serial.println("D done");
 
-  // Done
   penUp();
   Serial.println("\nAll done!");
   disableMotors();
 }
 
-// ═══════════════════════════════════════════
-// LOOP
-// ═══════════════════════════════════════════
 void loop() {
-  // one-shot
+
 }
